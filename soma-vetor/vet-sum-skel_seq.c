@@ -47,8 +47,6 @@ soma(void *arg)
 int
 main(int argc, char *argv[])
 {
-	printf("qunatidade elelmentos %d ", NELEM);
-
 	int i;
 	float *vet;
 	double sum;
@@ -87,7 +85,7 @@ main(int argc, char *argv[])
 	}
 
 	// gerar sempre a mesma sequência de valores? 
-	// srand(time(NULL));
+	srand(time(NULL));
 
 	// atribuição de valores (0<val<=1) aos elementos do vetor 
 	// Atenção para a função de geração de valores aleatórios: rand_r é 'thread safe'

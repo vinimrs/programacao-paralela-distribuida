@@ -22,13 +22,13 @@
 
 
 #define NELEM (1<<30)
-#define N_THREADS 100
+#define N_THREADS 20
 
 
 // Variável atômica. Pode ser incrementada sem mutex, usando opearação específica
 // _Atomic double total = 0;
 // Incremento: __atomic_fetch_add (& total, parcial, __ATOMIC_SEQ_CST);
-float *_vet;
+double *_vet;
 
 typedef struct thread_data {
    long init;
@@ -41,23 +41,17 @@ void *
 soma(void *arg)
 {
 
-	// Como tratar a soma local? Retorna como parâmetro?
-	// Salva de maneira atômica em variável global?
-	// Usa vetor global de somas parciais?
+   	thread_data *ptdata=(thread_data*) arg;
+	long init = ptdata->init;
+	long end = ptdata->end;
 
-   	thread_data *tdata=(thread_data *)arg;
-	long init = tdata->init;
-	long end = tdata->end;
-	printf("init = %ld, end = %ld\n", init, end);
-
-	double soma_parcial = 0;
+	double* soma_parcial = (double*) malloc(sizeof(double));
 
 	for (long i=init; i < end; i++) {
-		soma_parcial += _vet[i];
+		*soma_parcial += _vet[i];
 	}	
 
-	printf("soma parcial thread %f\n", soma_parcial);
-	pthread_exit((void *) &soma_parcial);
+	pthread_exit((void *) soma_parcial);
 
 }
 
@@ -94,7 +88,7 @@ main(int argc, char *argv[])
 	threads = (pthread_t *)malloc(num_threads * sizeof(pthread_t));	
 
 	// alocação do vetor
-	_vet = (float *)malloc(nelem * sizeof(float));
+	_vet = (double *)malloc(nelem * sizeof(double));
 
 	if (!_vet) {
 		perror("Erro na alocacao do vetor de elementos.");
@@ -102,7 +96,7 @@ main(int argc, char *argv[])
 	}
 
 	// gerar sempre a mesma sequência de valores? 
-	// srand(time(NULL));
+	srand(time(NULL));
 
 	// atribuição de valores (0<val<=1) aos elementos do vetor 
 	// Atenção para a função de geração de valores aleatórios: rand_r é 'thread safe'
@@ -110,24 +104,9 @@ main(int argc, char *argv[])
 		// _vet[i] = (float)((float)rand() / (float)RAND_MAX);
 		_vet[i] = (float)((float)rand_r(&seedp) / (float)RAND_MAX);
 
-	// Será que vale a pena paralelizar a geração de valores também?
-	// Numa aplicação real, provavelmente leria dados de arquivo ou estes seriam gerados no código...
-
-
-	// // soma sequencial dos elementos do vetor
-	// sum = 0;
-	// for(i=0; i < nelem; i++)
-	// 	sum += _vet[i];
-
-	// Como fazer a soma em paralelo?
-
-	// 1o: Comentar código acima :-)
-	// Criar as threads, atribuindo uma parte do vetor para soma por cada uma delas
-	// O que passar como parâmetro? Intervalo do vetor cujos valores cada uma vai calcular...
-
 
 	long quantidade_para_thread = (long) NELEM / num_threads;
-	printf("quantidade elementos para thread %ld", quantidade_para_thread); 
+	// printf("quantidade elementos para thread %ld", quantidade_para_thread); 
 
 	thread_data **vetor_tdata = (thread_data **) malloc(num_threads * sizeof(thread_data));
 
@@ -139,9 +118,9 @@ main(int argc, char *argv[])
 
 	// Loop de criacao das threads
 	for (int i=0; i < num_threads; i++) {
-		printf("tdata.init %ld, tdata.end %ld, i = %d\n", vetor_tdata[i]->init, vetor_tdata[i]->end, i);
+		// printf("tdata.init %ld, tdata.end %ld, i = %d\n", vetor_tdata[i]->init, vetor_tdata[i]->end, i);
 
-		status = pthread_create(&threads[i], NULL, soma, &vetor_tdata[i] );
+		status = pthread_create(&threads[i], NULL, soma, (void *) vetor_tdata[i] );
 
 		if (status) {
 			printf("Falha da criacao da thread %d (%d)\n", i, status);
@@ -149,38 +128,34 @@ main(int argc, char *argv[])
 		}
 	}
 
-	// Juntar as somas parciais? Em qual tarefa?
-	// loop de pthread_join...
-	// for(i=0; i < num_threads; i++) {
-	//		...
-	// }
 
-	// Como coletar as somas parciais calculadas pelas threads?
-	// Thread retorna valor?  Usar vetor global?
-	// Usar variável global incrementada com exclusão mútua?
-	// Usar variável global incrementada com instrução atômica?
-	// loop de espera pelo término da execução das threads
 	for (int i=0; i < num_threads; i++) {
 
-		float *soma_parcial = (float *) malloc(sizeof(float));
+		// double *soma_parcial = (double *) malloc(sizeof(double));
+		void * result;
+
 		// join recebendo a soma parcial de cada thread
-		status = pthread_join(threads[i], (void **)soma_parcial );
+		status = pthread_join(threads[i], &result );
 
 		if (status) {
 			printf("Erro em pthread_join (%d)\n",status);
 			break;
 		}
 
-		sum += *soma_parcial;
+		sum += *(double*)result;
 	}
 
 	printf("Soma: %f\n",sum);
 
 	// libera o vetor de ponteiros para as threads
-	// free(threads);
+	free(threads);
 
 	// libera o vetor de valores
 	free(_vet);
+
+	for (i = 0; i < num_threads; ++i) {
+		free(vetor_tdata[i]);
+	}
 
 	return(0);
 }
