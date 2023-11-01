@@ -1,0 +1,4 @@
+sudo apt install imagemagick
+
+// rodar
+./show <nome-imagem>

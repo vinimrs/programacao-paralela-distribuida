@@ -81,7 +81,7 @@ main(int argc, char **argv)
 		// Utilizamos a operação XOR para obter uma semente semi-aleatoria
 		*mystate = time(NULL) ^ omp_get_thread_num() ^ pthread_self();
 
-		#pragma omp for reduction(+ : hits) 
+		#pragma omp for reduction(+ : hits) private(x,y)
 		for (long i=0; i < amostras; i++) {
 			// Geração de números aleatórios entre 0 e 1, usando a função eradnd48()
 			x=erand48(mystate);
