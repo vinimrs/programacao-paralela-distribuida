@@ -1,3 +1,4 @@
+%%writefile cuda.cu
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -24,31 +25,25 @@ __global__ void md_all_pairs (uint32_t* dists, uint32_t k, uint32_t v) {
 }
 
 /* Computes the average minimum distance between all pairs of vertices with a path connecting them */
-void amd (uint32_t* dists, uint32_t v) {
-  uint32_t i, j;
+__global__ void amd (uint32_t* dists, uint32_t v, uint32_t* data) {
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int j = blockIdx.y * blockDim.y + threadIdx.y;
 	uint32_t infinity = v*v;
-	uint32_t smd = 0; 	//sum of minimum distances
-	uint32_t paths = 0; //number of paths found
-	uint32_t solution = 0;
+  uint32_t val = 1;
 
-  for (i = 0; i < v; ++i) {
-      for (j = 0; j < v; ++j) {
-          // We only consider if the vertices are different and there is a path
-          if ((i != j) && (dists[i*v+j] < infinity)) {
-            smd += dists[i*v+j];
-            paths++;
-          }
-      }
+  // We only consider if the vertices are different and there is a path
+  if ((i != j) && (j < v && i < v) && 
+      (dists[i*v+j] != 0) && (dists[i*v+j] < infinity)
+      ) {
+    atomicAdd(&data[0], dists[i*v+j]);
+    atomicAdd(&data[1], val);
   }
-
-	solution = smd / paths;
-	printf("%d\n", solution);
 
 }
 
 /* Debug function (not to be used when measuring performance)*/
 void debug (uint32_t* dists, uint32_t v) {
-    uint32_t i, j;
+  uint32_t i, j;
 	uint32_t infinity = v*v;
 
     for (i = 0; i < v; ++i) {
@@ -112,18 +107,37 @@ int main (int argc, char* argv[]) {
       md_all_pairs<<< grid, block >>>(d_dists, k, v);
     }
 
-
     // Copy result from gpu to cpu
     cudaMemcpy(dists, d_dists, size, cudaMemcpyDeviceToHost);
 
-    //Computes and prints the final solution
-    amd(dists, v);
+    // Computing the final solution
+    uint32_t* d_data; // pointer to solution data on GPU
+    size_t sizeData = 2 * sizeof(uint32_t);
+    uint32_t* data = (uint32_t *) malloc(sizeData);
+    data[0] = 0; // sum of minimum distances
+    data[1] = 0; // number of paths found
+
+    uint32_t solution = 0;
+
+    cudaMalloc((void **)&d_data, sizeData);
+
+    // Copy of data from data to d_data
+    cudaMemcpy(d_data, data, sizeData, cudaMemcpyHostToDevice);
+
+    //Computes the final solution
+    amd<<< grid, block >>>(d_dists, v, d_data);
+
+    cudaMemcpy(data, d_data, sizeData, cudaMemcpyDeviceToHost);
+
+    solution = data[0] / data[1];
+    printf("%d\n", solution);
 
 #if DEBUG
 	debug(dists, v);
 #endif
     
     cudaFree(d_dists);
+    cudaFree(d_data);
 
     return 0;
 }
