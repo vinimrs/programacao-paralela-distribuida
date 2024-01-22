@@ -2,42 +2,24 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <omp.h>
+#include <cuda.h>
 
-// https://en.wikipedia.org/wiki/Parallel_all-pairs_shortest_path_algorithm#Parallelization
 // Solves the minimum distance between all pairs of vertices
-void md_all_pairs (uint32_t* dists, uint32_t v) {
-    uint32_t k, i, j;
+__global__ void md_all_pairs (uint32_t* dists, uint32_t k, uint32_t v) {
+      int i = blockIdx.x * blockDim.x + threadIdx.x;
+      int j = blockIdx.y * blockDim.y + threadIdx.y;
 
-
-    // from vertex k, which paths passing through it can be less costly?
-    //  for any yes answer, uses the less costly result to the distance from i => j
-    // i => k => j < i => j ? 
-    for (k = 0; k < v; ++k) {
-      // Since row k and column k (the pivots) remain
-      // unchanged after step k, the corresponding loop can
-      // be executed in parallel. Each iteration of the internal loop updates 
-      // only the corresponding entry in the dists array, 
-      // which is independent of the other entries.
-
-      #pragma omp parallel for private(i, j) shared(dists)
-      for (i = 0; i < v; ++i) {
-          if(i != k)
-            for (j = 0; j < v; ++j) {
-              if(j != k && j != i) {
-                uint32_t distanceThroughK = dists[i*v+k] + dists[k*v+j];
-                
-                // Checks for overflows with the UINT32_MAX
-                if ((distanceThroughK >= dists[i*v+k])
-                      &&(distanceThroughK >= dists[k*v+j])
-                      &&(distanceThroughK < dists[i*v+j])
-                    ) {
-                  dists[i*v+j] = distanceThroughK;
-                }
-              }
-            }
+      if(i < v && j < v) {
+        uint32_t distanceThroughK = dists[i*v+k] + dists[k*v+j];
+      
+        // Checks for overflows with the UINT32_MAX
+        if ((distanceThroughK >= dists[i*v+k])
+              &&(distanceThroughK >= dists[k*v+j])
+              &&(distanceThroughK < dists[i*v+j])
+            ) {
+          dists[i*v+j] = distanceThroughK;
+        }
       }
-    }
 
 }
 
@@ -49,7 +31,6 @@ void amd (uint32_t* dists, uint32_t v) {
 	uint32_t paths = 0; //number of paths found
 	uint32_t solution = 0;
 
-  #pragma omp parallel for private(i, j) reduction(+:smd, paths)
   for (i = 0; i < v; ++i) {
       for (j = 0; j < v; ++j) {
           // We only consider if the vertices are different and there is a path
@@ -81,6 +62,7 @@ void debug (uint32_t* dists, uint32_t v) {
 
 // Main program - reads input, calls FW, shows output
 int main (int argc, char* argv[]) {
+    uint32_t* d_dists; // pointer to matrix from GPU
 
     //Reads input 
     //First line: v (number of vertices) and e (number of edges)
@@ -89,8 +71,9 @@ int main (int argc, char* argv[]) {
 
     //Allocates distances matrix (w/ size v*v) i
     //and sets it with max distance and 0 for own vertex
-    uint32_t* dists = malloc(v*v*sizeof(uint32_t));
-    memset(dists, UINT32_MAX, v*v*sizeof(uint32_t));
+    size_t size = v*v*sizeof(uint32_t);
+    uint32_t* dists = (uint32_t *) malloc(size);
+    memset(dists, UINT32_MAX, size);
     uint32_t i;
     for ( i = 0; i < v; ++i ) dists[i*v+i] = 0;
 
@@ -104,10 +87,34 @@ int main (int argc, char* argv[]) {
     // Define number of threads with the number of vertices;
     int num_threads = v > 32 ? 32 : v;
     printf("num_threads = %d\n", num_threads);
-    omp_set_num_threads(num_threads);
+
+    // Malloc of space to matrix in GPU
+    cudaMalloc((void **)&d_dists, size);
+
+    // Copy of data from dists to d_dists
+    cudaMemcpy(d_dists, dists, size, cudaMemcpyHostToDevice);
+
+    // Defining block and grid
+    dim3 block;
+
+    // Standard setup with 252 threads per block
+    block.x = 16;
+    block.y = 16;
+    block.z = 1;
+
+    dim3 grid;
+    grid.x = (v + block.x -1) / block.x; // ceil of division
+    grid.y = (v + block.y -1) / block.y;
+    grid.z = 1;
 
 	  //Computes the minimum distance for all pairs of vertices
-    md_all_pairs(dists, v);
+    for(int k = 0; k < v; ++k) {
+      md_all_pairs<<< grid, block >>>(d_dists, k, v);
+    }
+
+
+    // Copy result from gpu to cpu
+    cudaMemcpy(dists, d_dists, size, cudaMemcpyDeviceToHost);
 
     //Computes and prints the final solution
     amd(dists, v);
@@ -115,6 +122,8 @@ int main (int argc, char* argv[]) {
 #if DEBUG
 	debug(dists, v);
 #endif
+    
+    cudaFree(d_dists);
 
     return 0;
 }
