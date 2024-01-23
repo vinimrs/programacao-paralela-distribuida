@@ -26,3 +26,9 @@ debug: amd.c
 
 clean:
 	rm -f $(OUT) $(OUT).debug
+
+mpi: amd_mpi.c
+	mpicc amd_mpi.c -o mpi -O3 -w
+
+mpi_run: mpi
+	mpirun -n 5 -host localhost:9 mpi < graph.in
