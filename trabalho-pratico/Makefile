@@ -18,6 +18,9 @@ amd_omp_debug: amd_threads.c
 time: $(OUTOMP) $(OUT)
 	time ./$(OUT) < ./$(IN100) && time ./$(OUTOMP) < ./$(IN100)
 
+time_temp: $(OUTOMP) $(OUT)
+	export OMP_NUM_THREADS=$(NUM) && (time ./$(OUTOMP) < ./$(IN100)) 2> ./temp_output.txt
+
 random_graph: random_graph.c
 	gcc random_graph.c -o random_graph
 
@@ -32,3 +35,6 @@ mpi: amd_mpi.c
 
 mpi_run: mpi
 	mpirun -n 5 -host localhost:9 mpi < graph.in
+
+get_omp_results:
+	$(CC) get_omp_results.c -o get_results && ./get_results

@@ -101,10 +101,17 @@ int main (int argc, char* argv[]) {
         if (cost < dists[source*v+dest]) dists[source*v+dest] = cost;
     }
 
-    // Define number of threads with the number of vertices;
-    int num_threads = v > 32 ? 32 : v;
-    printf("num_threads = %d\n", num_threads);
-    omp_set_num_threads(num_threads);
+    if(getenv("OMP_NUM_THREADS")) {
+      printf("OMP_NUM_THREADS defined: %s\n", getenv("OMP_NUM_THREADS"));
+
+    } else {
+      printf("OMP_NUM_THREADS not defined\n");
+      // Define number of threads with the number of vertices;
+      int num_threads = v > 12 ? 12 : v; 
+      omp_set_num_threads(num_threads);
+      
+      printf("num_threads = %d\n", num_threads);
+    }
 
 	  //Computes the minimum distance for all pairs of vertices
     md_all_pairs(dists, v);
